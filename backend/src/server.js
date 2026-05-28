@@ -50,6 +50,10 @@ import { sanitizeInputs } from './middleware/sanitize.js';
 
 dotenv.config();
 
+const logger = {
+  info: (event, data) => console.log(`[${event}]`, data),
+};
+
 const app = express();
 const PORT = getConfig().server.port;
 
