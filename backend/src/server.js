@@ -14,6 +14,7 @@ import chaosRoutes from './routes/chaos.js';
 import { eventMonitor } from './eventSourcing/index.js';
 import { auditLogger } from './security/index.js';
 import { getConfig } from './config/env.js';
+import { securityHeaders } from './middleware/securityHeaders.js';
 
 dotenv.config();
 
@@ -36,6 +37,7 @@ app.use(cors({
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+app.use(securityHeaders);
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false, limit: '10kb' }));
 
