@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 
 export default defineConfig(({ mode }) => ({
   // CDN base URL: set VITE_CDN_URL in .env to serve assets from CDN
@@ -9,12 +10,23 @@ export default defineConfig(({ mode }) => ({
     react(),
     // Bundle analysis: generates stats.html after `npm run build`
     visualizer({ filename: 'stats.html', gzipSize: true, brotliSize: true }),
-  ],
+    // Sentry: Upload source maps for error reporting (only in production)
+    mode === 'production' && process.env.VITE_SENTRY_DSN
+      ? sentryVitePlugin({
+          authToken: process.env.SENTRY_AUTH_TOKEN,
+          org: process.env.SENTRY_ORG,
+          project: process.env.SENTRY_PROJECT,
+          release: process.env.VITE_APP_VERSION || 'unknown',
+          sourceMaps: { filesToDeleteAfterUpload: ['**/*.map'] },
+        })
+      : null,
+  ].filter(Boolean),
   server: {
     port: 3000,
     proxy: { '/api': 'http://localhost:3001' },
   },
   build: {
+    sourcemap: true,
     // Code splitting: vendor chunk + per-route lazy chunks
     rollupOptions: {
       output: {

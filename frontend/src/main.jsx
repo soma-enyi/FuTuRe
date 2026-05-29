@@ -1,3 +1,4 @@
+import { initSentry } from './utils/errorLogger';
 import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +9,9 @@ import { AppStateProvider } from './store/index.js';
 import './utils/axiosConfig.js'; // Initialize axios with API v1 base URL
 import { queryClient } from './config/queryClient';
 import './index.css';
+
+// Initialize error tracking first
+initSentry();
 
 // Lazy-load App for code splitting
 const App = lazy(() => import('./App'));
