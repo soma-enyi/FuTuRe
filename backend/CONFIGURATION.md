@@ -47,3 +47,40 @@ You can store encrypted values using `ENC(<base64>)` or `enc:<base64>`, and prov
 
 The code uses AES-256-GCM with a SHA-256 derived key. See `backend/src/config/secrets.js`.
 
+## API Versioning
+
+The API uses semantic versioning with the `/api/v1/` prefix for all routes.
+
+### Versioning Strategy
+
+- **Current version**: `/api/v1/` (all routes mounted here)
+- **Unversioned paths**: Requests to `/api/*` (without version) are automatically redirected to `/api/v1/*` with a 301 status code
+- **Deprecation headers**: Unversioned requests receive:
+  - `Deprecation: true`
+  - `Sunset: <date 90 days from now>`
+  - `Link: </api/v1/...>; rel="successor-version"`
+
+### Health endpoints
+
+Health check endpoints are **not versioned** and remain at the root level for compatibility with load balancers and orchestration platforms:
+
+- `GET /health` - Basic health check
+- `GET /health/live` - Liveness probe (Kubernetes)
+- `GET /health/ready` - Readiness probe (Kubernetes)
+- `GET /health/detailed` - Detailed health report (auth-gated)
+- `GET /metrics` - System metrics
+
+### Frontend integration
+
+The frontend is configured to use `/api/v1/` as the base URL for all API calls via `axios.defaults.baseURL`. This is set in `frontend/src/utils/axiosConfig.js`.
+
+### Migration path
+
+When introducing breaking changes:
+
+1. Implement the new behavior in a new version (e.g., `/api/v2/`)
+2. Keep `/api/v1/` stable for 90 days
+3. Clients have 90 days to migrate (indicated by `Sunset` header)
+4. After 90 days, `/api/v1/` can be deprecated or removed
+
+

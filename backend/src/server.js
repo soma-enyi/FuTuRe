@@ -104,28 +104,40 @@ await auditLogger.initialize();
 
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.use('/api/stellar', stellarRoutes);
-app.use('/api/multisig', multiSigRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/events', eventsRoutes);
-app.use('/api/security', securityRoutes);
-app.use('/api/load-testing', loadTestingRoutes);
-app.use('/api/chaos', chaosRoutes);
+
+// API v1 routes
+app.use('/api/v1/stellar', stellarRoutes);
+app.use('/api/v1/multisig', multiSigRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/events', eventsRoutes);
+app.use('/api/v1/security', securityRoutes);
+app.use('/api/v1/load-testing', loadTestingRoutes);
+app.use('/api/v1/chaos', chaosRoutes);
+app.use('/api/v1/mobile', mobileRoutes);
+app.use('/api/v1/webhooks', webhookRoutes);
+app.use('/api/v1/metrics', metricsRoutes);
+app.use('/api/v1/transactions', transactionRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/compliance', complianceRoutes);
+app.use('/api/v1/path-payment', pathPaymentRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/backup', backupRoutes);
+app.use('/api/v1/cache', cacheRoutes);
+app.use('/api/v1/streaming', streamingRoutes);
+app.use('/api/v1/recovery', recoveryRoutes);
+app.use('/api/v1/retry', retryRoutes);
+app.use('/api/v1/accounts', accountsRoutes);
+
+// Health routes (not versioned - used by load balancers)
 app.use('/', healthRoutes);
-app.use('/api/mobile', mobileRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/metrics', metricsRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/compliance', complianceRoutes);
-app.use('/api/path-payment', pathPaymentRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/backup', backupRoutes);
-app.use('/api/cache', cacheRoutes);
-app.use('/api/streaming', streamingRoutes);
-app.use('/api/recovery', recoveryRoutes);
-app.use('/api/retry', retryRoutes);
-app.use('/api/accounts', accountsRoutes);
+
+// Deprecation middleware for unversioned /api/* paths
+app.use('/api/*', (req, res, next) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
+  res.setHeader('Link', `<${req.originalUrl.replace('/api/', '/api/v1/')}>; rel="successor-version"`);
+  res.status(301).redirect(req.originalUrl.replace('/api/', '/api/v1/'));
+});
 
 // 404 handler for undefined routes
 app.use(notFoundHandler);
@@ -133,33 +145,6 @@ app.use(notFoundHandler);
 // Error handling middleware (must be after all routes)
 app.use(errorLogger);
 app.use(errorHandler);
-
-app.get('/health', async (req, res) => {
-  const db = await checkDBHealth();
-
-  // Check Stellar network connectivity
-  let stellar = { online: false };
-  try {
-    const { getNetworkStatus } = await import('./services/stellar.js');
-    stellar = await getNetworkStatus();
-  } catch (err) {
-    logger.warn('health.stellar.check.failed', { error: err.message });
-  }
-
-  const allHealthy = db.status === 'ok' && stellar.online;
-  const status = allHealthy ? 'ok' : 'degraded';
-
-  res.status(allHealthy ? 200 : 503).json({
-    status,
-    network: getConfig().stellar.network,
-    db,
-    stellar: {
-      online: stellar.online,
-      network: stellar.network || null,
-      horizonVersion: stellar.horizonVersion || null,
-    },
-  });
-});
 
 const httpServer = createServer(app);
 initWebSocket(httpServer);
