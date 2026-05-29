@@ -1,6 +1,7 @@
 import { createServer } from 'http';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger.js';
 import logger from './config/logger.js';
@@ -47,6 +48,8 @@ import { sanitizeInputs } from './middleware/sanitize.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
 
 dotenv.config();
+import { csrfTokenMiddleware, validateCSRFMiddleware, csrfTokenEndpoint } from './middleware/csrf.js';
+import dotenv from 'dotenv';
 
 const logger = {
   info: (event, data) => console.log(`[${event}]`, data),
@@ -66,8 +69,9 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
       cb(null, false);
     },
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    credentials: true
   })
 );
 
@@ -80,8 +84,13 @@ app.use((err, req, res, next) => {
 });
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+app.use(cookieParser());
 app.use(requestIdMiddleware);
 app.use(requestLogger);
+
+// CSRF protection
+app.use(csrfTokenMiddleware);
+app.use(validateCSRFMiddleware);
 
 // Rate limiting
 app.use(createRateLimiter());
@@ -162,6 +171,9 @@ app.get('/health', async (req, res) => {
 const httpServer = createServer(app);
 initWebSocket(httpServer);
 
+// Track active intervals for cleanup
+const activeIntervals = [];
+
 httpServer.listen(PORT, () => {
   const { stellar, meta } = getConfig();
   logger.info('server.started', { port: PORT, network: stellar.network });
@@ -173,6 +185,28 @@ httpServer.listen(PORT, () => {
   logger.info('server.started', { port: PORT, network: process.env.STELLAR_NETWORK });
 
   // Start background workers
+  // Start background streaming payment worker
+  const STREAM_INTERVAL = 60 * 1000; // Check every minute
+  const streamInterval = setInterval(async () => {
+    try {
+      await processActiveStreams();
+    } catch (err) {
+      logger.error('streaming.worker.failed', { error: err.message });
+    }
+  }, STREAM_INTERVAL);
+  activeIntervals.push(streamInterval);
+
+  // Expire stale multi-sig transactions every minute
+  const multiSigInterval = setInterval(async () => {
+    try {
+      const count = await expireStaleTransactions();
+      if (count > 0) logger.info('multisig.expired', { count });
+    } catch (err) {
+      logger.error('multisig.expiry.failed', { error: err.message });
+    }
+  }, 60 * 1000);
+  activeIntervals.push(multiSigInterval);
+
   startScheduler();
 });
 
@@ -183,11 +217,17 @@ async function shutdown(signal) {
   logger.info('server.shutdown.start', { signal });
 
   // 1. Stop accepting new connections
-  httpServer.close(async () => {
+  httpServer.close(() => {
     logger.info('server.shutdown.httpClosed');
   });
 
-  // 2. Wait for in-flight requests to drain, with a hard timeout
+  // 2. Clear all active intervals
+  for (const interval of activeIntervals) {
+    clearInterval(interval);
+  }
+  logger.info('server.shutdown.intervalsCleared', { count: activeIntervals.length });
+
+  // 3. Wait for in-flight requests to drain, with a hard timeout
   const forceExit = setTimeout(() => {
     logger.error('server.shutdown.timeout', { ms: SHUTDOWN_TIMEOUT_MS });
     process.exit(1);
