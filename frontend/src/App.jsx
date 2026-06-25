@@ -12,6 +12,7 @@ import {
   createTrustline,
   batchPayment,
 } from './api/stellar.js';
+import { verifyRecoveryCode, getMFAStatus } from './api/auth.js';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { isValidStellarAddress } from './utils/validateStellarAddress';
 import { validateAmount, formatAmount } from './utils/validateAmount';
@@ -144,6 +145,8 @@ function App() {
   const [trustlineLoading, setTrustlineLoading] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [batchRecipients, setBatchRecipients] = useState([]);
+  const [showRecoveryCodeEntry, setShowRecoveryCodeEntry] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
   const { isDark, toggleTheme } = useTheme();
   useRTL();
   const prefersReduced = useReducedMotion();
@@ -577,6 +580,21 @@ function App() {
       msg.error(getFriendlyError(error));
     } finally {
       dispatch({ type: A.SET_LOADING, payload: '' });
+    }
+  };
+
+  const handleRecoveryCodeSubmit = async () => {
+    if (!account) return;
+    
+    setShowRecoveryCodeEntry(false);
+    try {
+      const result = await verifyRecoveryCode(account.publicKey, recoveryCode);
+      msg.success('Recovery code accepted! You are logged in.');
+      setRecoveryCode('');
+    } catch (error) {
+      logError(error, { context: 'recovery-code' });
+      msg.error(getFriendlyError(error));
+      setShowRecoveryCodeEntry(true);
     }
   };
 
@@ -2016,6 +2034,92 @@ function App() {
               <Suspense fallback={<Spinner />}>
                 <BackupSettings onClose={() => setShowBackupSettings(false)} />
               </Suspense>
+            )}
+
+            {/* MFA Recovery Code Entry */}
+            {showRecoveryCodeEntry && (
+              <motion.div
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  background: 'rgba(0,0,0,0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 2000,
+                }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <motion.div
+                  style={{
+                    background: '#fff',
+                    borderRadius: '8px',
+                    padding: '24px',
+                    maxWidth: '400px',
+                  }}
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 20 }}
+                >
+                  <h3 style={{ marginTop: 0, marginBottom: 8 }}>Enter Recovery Code</h3>
+                  <p style={{ fontSize: '0.875rem', color: '#666', marginBottom: 16 }}>
+                    Your TOTP device is unavailable. Enter one of your recovery codes to continue.
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="Recovery Code (8 hex characters)"
+                    value={recoveryCode}
+                    onChange={(e) => setRecoveryCode(e.target.value.toUpperCase())}
+                    maxLength={8}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '2px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '1rem',
+                      fontFamily: 'monospace',
+                      boxSizing: 'border-box',
+                      marginBottom: 16,
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={handleRecoveryCodeSubmit}
+                      disabled={recoveryCode.length !== 8}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Submit
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowRecoveryCodeEntry(false);
+                        setRecoveryCode('');
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: '#e5e7eb',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
